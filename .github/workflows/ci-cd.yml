@@ -1,0 +1,54 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    - name: Copy .env.testing
+      run: cp .env.testing .env
+
+    - name: Set App Key
+      run: |
+        php artisan key:generate --show --no-ansi >> .env
+        sed -i 's/^APP_KEY=.*$/APP_KEY=${{ secrets.APP_KEY }}/' .env
+
+    - name: Set DB Password
+      run: sed -i 's/^DB_PASSWORD=.*$/DB_PASSWORD=${{ secrets.DB_PASSWORD }}/' .env
+
+    - name: Build and start Docker containers
+      run: docker-compose -f docker-compose.test.yml up -d --build
+
+    - name: Wait for containers to be ready
+      run: |
+        echo "Waiting for containers to be ready..."
+        sleep 10
+
+    - name: Generate app key
+      run: docker-compose -f docker-compose.test.yml exec -T app php artisan key:generate --env=testing
+
+    - name: Run database migrations
+      run: docker-compose -f docker-compose.test.yml exec -T app php artisan migrate --env=testing --force
+
+    - name: Run tests with coverage
+      run: docker-compose -f docker-compose.test.yml exec -T app php artisan test --coverage-clover=coverage.xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+
+    - name: Stop Docker containers
+      if: always()
+      run: docker-compose -f docker-compose.test.yml down

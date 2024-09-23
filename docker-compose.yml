@@ -26,5 +26,10 @@ services:
     depends_on:
       - app
 
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
 volumes:
   dbdata:
